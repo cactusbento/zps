@@ -6,9 +6,6 @@ const usage =
     \\
     \\commands:
     \\    search [terms...]        Search package names and descriptions.
-    \\                             Terms after the first will further filter
-    \\                             the output.
-    \\                             If available, fzf will be used.
     \\    install [packages...]    Install one or more packages
     \\    uninstall [packages...]  Uninstall one or more packages
 ;
