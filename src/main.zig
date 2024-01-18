@@ -104,7 +104,7 @@ pub fn main() !void {
             }
         }
         switch (cmd) {
-            .search => {
+            .s, .search => {
                 debugLog("zps mode: search", .{});
 
                 var index_List = std.ArrayList(usize).init(allocator);
@@ -131,7 +131,10 @@ pub fn main() !void {
                     }
                 }
 
-                debugLog("zps search: {d} matches", .{index_List.items.len});
+                debugLog("zps search: {d} match{s}", .{
+                    index_List.items.len,
+                    if (index_List.items.len > 1) "es" else "",
+                });
 
                 for (index_List.items) |i| {
                     try ttycfg.setColor(stdout, .cyan);
@@ -152,7 +155,7 @@ pub fn main() !void {
                 }
                 try bw.flush();
             },
-            .install => {
+            .i, .install => {
                 debugLog("zps mode: install", .{});
                 debugLog("zps install: checking for \"bmake\" in PATH", .{});
                 const which_res = try std.process.Child.run(.{
@@ -267,7 +270,7 @@ pub fn main() !void {
                     }
                 }
             },
-            .uninstall => {
+            .u, .uninstall => {
                 const pkgs_to_uninstall = argv[2..];
                 for (pkgs_to_uninstall) |pkg_name| {
                     debugLog("zps uninstall: uninstalling package: {s}", .{pkg_name});
@@ -305,8 +308,11 @@ fn indexOfSlice(comptime T: type, a: []const []const T, b: []const T) ?usize {
 }
 
 const Command = enum {
+    s,
     search,
+    i,
     install,
+    u,
     uninstall,
 };
 
