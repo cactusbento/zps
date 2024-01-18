@@ -136,15 +136,11 @@ pub fn main() !void {
             const pkgs_json = try std.fs.cwd().openFile("packages.json", .{});
             defer pkgs_json.close();
 
-            var fifo = std.fifo.LinearFifo(u8, .{ .Static = 4096 }).init();
-            defer fifo.deinit();
+            const stat = try pkgs_json.stat();
 
-            var data = std.ArrayList(u8).init(allocator);
-            defer data.deinit();
+            const mmap = try std.os.mmap(null, stat.size, std.os.PROT.READ, std.os.MAP.PRIVATE, pkgs_json.handle, 0);
 
-            try fifo.pump(pkgs_json.reader(), data.writer());
-
-            const v = try std.json.parseFromSlice(simpleMAL, allocator, data.items, .{});
+            const v = try std.json.parseFromSlice(simpleMAL, allocator, mmap, .{});
             defer v.deinit();
 
             for (v.value.names, v.value.categories, v.value.descriptions) |n, c, d| {
