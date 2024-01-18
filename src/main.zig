@@ -73,36 +73,90 @@ pub fn main() !void {
             }
             slice.deinit(allocator);
         }
+        const simpleMAL = struct {
+            names: [][]const u8,
+            categories: [][]const u8,
+            descriptions: [][]const u8,
+        };
 
-        var pkgsrc_iter = pkgsrc.iterate();
-        while (try pkgsrc_iter.nextLinux()) |cat_entry| {
-            if (cat_entry.kind != .directory) continue;
-            var cat = try pkgsrc.openDir(cat_entry.name, .{ .iterate = true });
-            defer cat.close();
+        var has_pkg_json: bool = true;
 
-            debugLog("scanning category: {s}", .{cat_entry.name});
+        _ = std.fs.cwd().access("packages.json", .{}) catch |err| switch (err) {
+            error.FileNotFound => {
+                var pkgsrc_iter = pkgsrc.iterate();
+                while (try pkgsrc_iter.nextLinux()) |cat_entry| {
+                    if (cat_entry.kind != .directory) continue;
+                    var cat = try pkgsrc.openDir(cat_entry.name, .{ .iterate = true });
+                    defer cat.close();
 
-            var cat_iter = cat.iterate();
-            while (try cat_iter.nextLinux()) |pkg_entry| {
-                if (pkg_entry.kind != .directory) continue;
-                var pkg = try cat.openDir(pkg_entry.name, .{});
-                defer pkg.close();
+                    debugLog("scanning category: {s}", .{cat_entry.name});
 
-                _ = pkg.statFile("DESCR") catch |err| switch (err) {
-                    error.FileNotFound => continue,
-                    else => |e| return e,
+                    var cat_iter = cat.iterate();
+                    while (try cat_iter.nextLinux()) |pkg_entry| {
+                        if (pkg_entry.kind != .directory) continue;
+                        var pkg = try cat.openDir(pkg_entry.name, .{});
+                        defer pkg.close();
+
+                        _ = pkg.statFile("DESCR") catch |err1| switch (err1) {
+                            error.FileNotFound => continue,
+                            else => |e| return e,
+                        };
+
+                        debugLog("checking package: {s}", .{pkg_entry.name});
+
+                        try packages.append(allocator, try Package.read(
+                            allocator,
+                            cat_entry.name,
+                            pkg_entry.name,
+                            pkg,
+                        ));
+                    }
+                }
+
+                const write_file = try std.fs.cwd().createFile("packages.json", std.fs.File.CreateFlags{
+                    .read = true,
+                });
+                defer write_file.close();
+
+                const smal: simpleMAL = .{
+                    .names = packages.items(.name),
+                    .categories = packages.items(.category),
+                    .descriptions = packages.items(.description),
                 };
 
-                debugLog("checking package: {s}", .{pkg_entry.name});
+                try std.json.stringify(smal, .{
+                    .whitespace = .indent_4,
+                }, write_file.writer());
+                has_pkg_json = false;
+            },
+            else => |e| return e,
+        };
 
-                try packages.append(allocator, try Package.read(
-                    allocator,
-                    cat_entry.name,
-                    pkg_entry.name,
-                    pkg,
-                ));
+        if (has_pkg_json) {
+            const pkgs_json = try std.fs.cwd().openFile("packages.json", .{});
+            defer pkgs_json.close();
+
+            var fifo = std.fifo.LinearFifo(u8, .{ .Static = 4096 }).init();
+            defer fifo.deinit();
+
+            var data = std.ArrayList(u8).init(allocator);
+            defer data.deinit();
+
+            try fifo.pump(pkgs_json.reader(), data.writer());
+
+            const v = try std.json.parseFromSlice(simpleMAL, allocator, data.items, .{});
+            defer v.deinit();
+
+            for (v.value.names, v.value.categories, v.value.descriptions) |n, c, d| {
+                // debugLog("{s}/{s}-{s}", .{ c, n, d });
+                try packages.append(allocator, Package{
+                    .name = try allocator.dupe(u8, n),
+                    .category = try allocator.dupe(u8, c),
+                    .description = try allocator.dupe(u8, d),
+                });
             }
         }
+
         switch (cmd) {
             .s, .search => {
                 debugLog("zps mode: search", .{});
