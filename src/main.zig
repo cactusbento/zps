@@ -20,6 +20,12 @@ const pkgsrcloc =
     \\    ~\$ set -U PKGSRCLOC ~/.local/pkgsrc
 ;
 
+pub fn debugLog(comptime fmt: []const u8, args: anytype) void {
+    if (blt.mode == .Debug) {
+        std.log.debug(fmt, args);
+    }
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -47,11 +53,16 @@ pub fn main() !void {
         var pkgsrc = try std.fs.openDirAbsolute(loc, .{ .iterate = true });
         defer pkgsrc.close();
 
+        debugLog("PKGSRCLOC={s}", .{loc});
+
         const cmd = std.meta.stringToEnum(Command, argv[1]) orelse {
             try stdout.print("{s}\n", .{usage});
             try bw.flush();
             return error.InvalidCommand;
         };
+
+        debugLog("zps command: {s}", .{argv[1]});
+
         var packages = std.MultiArrayList(Package){};
         defer {
             var slice = packages.slice();
@@ -65,13 +76,15 @@ pub fn main() !void {
 
         var pkgsrc_iter = pkgsrc.iterate();
         while (try pkgsrc_iter.nextLinux()) |cat_entry| {
-            if (cat_entry.kind != .directory) continue; // ignore files
+            if (cat_entry.kind != .directory) continue;
             var cat = try pkgsrc.openDir(cat_entry.name, .{ .iterate = true });
             defer cat.close();
 
+            debugLog("scanning category: {s}", .{cat_entry.name});
+
             var cat_iter = cat.iterate();
             while (try cat_iter.nextLinux()) |pkg_entry| {
-                if (pkg_entry.kind != .directory) continue; // ignore files
+                if (pkg_entry.kind != .directory) continue;
                 var pkg = try cat.openDir(pkg_entry.name, .{});
                 defer pkg.close();
 
@@ -79,6 +92,8 @@ pub fn main() !void {
                     error.FileNotFound => continue,
                     else => |e| return e,
                 };
+
+                debugLog("checking package: {s}", .{pkg_entry.name});
 
                 try packages.append(allocator, try Package.read(
                     allocator,
@@ -90,8 +105,12 @@ pub fn main() !void {
         }
         switch (cmd) {
             .search => {
+                debugLog("zps mode: search", .{});
+
                 var index_List = std.ArrayList(usize).init(allocator);
                 defer index_List.deinit();
+
+                debugLog("zps search: scanning {d} packages for matches", .{packages.len});
 
                 for (packages.items(.name), packages.items(.description), 0..) |name, desc, i| {
                     const search_terms = argv[2..];
@@ -111,6 +130,9 @@ pub fn main() !void {
                         }
                     }
                 }
+
+                debugLog("zps search: {d} matches", .{index_List.items.len});
+
                 for (index_List.items) |i| {
                     try ttycfg.setColor(stdout, .cyan);
                     try stdout.print("{s}", .{
@@ -131,6 +153,8 @@ pub fn main() !void {
                 try bw.flush();
             },
             .install => {
+                debugLog("zps mode: install", .{});
+                debugLog("zps install: checking for \"bmake\" in PATH", .{});
                 const which_res = try std.process.Child.run(.{
                     .allocator = allocator,
                     .argv = &.{ "which", "bmake" },
@@ -140,6 +164,7 @@ pub fn main() !void {
                     allocator.free(which_res.stderr);
                 }
                 if (which_res.term != .Exited) {
+                    debugLog("zps install: \"bmake\" not found in PATH", .{});
                     try stdout.print(
                         \\ Command "bmake" not found.
                         \\
@@ -151,11 +176,16 @@ pub fn main() !void {
                 }
                 const pkgs_to_install = argv[2..];
                 for (pkgs_to_install) |pkg_name| {
+                    debugLog("zps install: checking for package: {s}", .{pkg_name});
+
                     const pkg_index = indexOfSlice(u8, packages.items(.name), pkg_name) orelse {
+                        debugLog("zps install: {s} not found", .{pkg_name});
                         try stdout.print("Package not found: {s}\n", .{pkg_name});
                         try bw.flush();
                         return error.PackageNotFound;
                     };
+
+                    debugLog("zps install: {s} found at index {d}", .{ pkg_name, pkg_index });
 
                     const pkg_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{
                         packages.items(.category)[pkg_index],
@@ -163,8 +193,12 @@ pub fn main() !void {
                     });
                     defer allocator.free(pkg_path);
 
+                    debugLog("zps install: package path: {s}", .{pkg_path});
+
                     var pkg_dir = try pkgsrc.openDir(pkg_path, .{ .iterate = true });
                     defer pkg_dir.close();
+
+                    debugLog("zps install: compiling using \"bmake\"", .{});
 
                     const bmake_res = try std.process.Child.run(.{
                         .allocator = allocator,
@@ -181,6 +215,8 @@ pub fn main() !void {
                         return error.bmakeFail;
                     }
 
+                    debugLog("zps install: installing using \"bmake install\"", .{});
+
                     const bmake_install_res = try std.process.Child.run(.{
                         .allocator = allocator,
                         .argv = &.{ "bmake", "install" },
@@ -196,6 +232,8 @@ pub fn main() !void {
                         return error.bmakeInstallFail;
                     }
 
+                    debugLog("zps install: cleaning up using \"bmake clean\"", .{});
+
                     const bmake_clean_res = try std.process.Child.run(.{
                         .allocator = allocator,
                         .argv = &.{ "bmake", "clean" },
@@ -210,6 +248,8 @@ pub fn main() !void {
                         try bw.flush();
                         return error.bmakeCleanFail;
                     }
+
+                    debugLog("zps install: cleaning up dependencies using \"bmake clean-depends\"", .{});
 
                     const bmake_cleandep_res = try std.process.Child.run(.{
                         .allocator = allocator,
@@ -230,6 +270,7 @@ pub fn main() !void {
             .uninstall => {
                 const pkgs_to_uninstall = argv[2..];
                 for (pkgs_to_uninstall) |pkg_name| {
+                    debugLog("zps uninstall: uninstalling package: {s}", .{pkg_name});
                     const pkg_delete_res = try std.process.Child.run(.{
                         .allocator = allocator,
                         .argv = &.{ "pkg_delete", pkg_name },
