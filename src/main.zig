@@ -83,11 +83,16 @@ pub fn main() !void {
 
         _ = pkgsrc.access("packages.json", .{}) catch |err| switch (err) {
             error.FileNotFound => {
+                var db_prog = std.Progress{};
+                var p_db = db_prog.start("Building package database", 0);
+
                 var pkgsrc_iter = pkgsrc.iterate();
                 while (try pkgsrc_iter.nextLinux()) |cat_entry| {
                     if (cat_entry.kind != .directory) continue;
                     var cat = try pkgsrc.openDir(cat_entry.name, .{ .iterate = true });
                     defer cat.close();
+
+                    var p_cat = p_db.start(cat_entry.name, 0);
 
                     debugLog("scanning category: {s}", .{cat_entry.name});
 
@@ -110,7 +115,10 @@ pub fn main() !void {
                             pkg_entry.name,
                             pkg,
                         ));
+                        p_cat.completeOne();
                     }
+
+                    p_cat.end();
                 }
 
                 const write_file = try pkgsrc.createFile("packages.json", std.fs.File.CreateFlags{
@@ -188,7 +196,7 @@ pub fn main() !void {
 
                 for (index_List.items) |i| {
                     try ttycfg.setColor(stdout, .cyan);
-                    try stdout.print("{s}", .{
+                    try stdout.print("\n{s}", .{
                         packages.items(.category)[i],
                     });
                     try ttycfg.setColor(stdout, .reset);
@@ -198,7 +206,7 @@ pub fn main() !void {
                         packages.items(.name)[i],
                     });
                     try ttycfg.setColor(stdout, .reset);
-                    try stdout.print("{s}\n\n", .{
+                    try stdout.print("{s}\n", .{
                         packages.items(.description)[i],
                     });
                     try ttycfg.setColor(stdout, .reset);
@@ -338,6 +346,10 @@ pub fn main() !void {
             },
             .u, .uninstall => {
                 const pkgs_to_uninstall = argv[2..];
+
+                var progress = std.Progress{};
+                var p_uninstall = progress.start("Uninstalling", pkgs_to_uninstall.len);
+
                 for (pkgs_to_uninstall) |pkg_name| {
                     debugLog("zps uninstall: uninstalling package: {s}", .{pkg_name});
                     const pkg_delete_res = try std.process.Child.run(.{
@@ -353,6 +365,8 @@ pub fn main() !void {
                         try bw.flush();
                         return error.pkgDeleteFail;
                     }
+                    p_uninstall.completeOne();
+                    p_uninstall.end();
                 }
             },
         }
