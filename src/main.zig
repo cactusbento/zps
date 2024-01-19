@@ -227,8 +227,15 @@ pub fn main() !void {
                     try bw.flush();
                     return error.CommandNotFound;
                 }
+
                 const pkgs_to_install = argv[2..];
+
+                var progress = std.Progress{};
+                var p_install = progress.start("Installing", pkgs_to_install.len);
+
                 for (pkgs_to_install) |pkg_name| {
+                    var p_pkg = p_install.start(pkg_name, 5);
+
                     debugLog("zps install: checking for package: {s}", .{pkg_name});
 
                     const pkg_index = indexOfSlice(u8, packages.items(.name), pkg_name) orelse {
@@ -268,6 +275,8 @@ pub fn main() !void {
                         return error.bmakeFail;
                     }
 
+                    p_pkg.completeOne();
+
                     debugLog("zps install: installing using \"bmake install\"", .{});
 
                     const bmake_install_res = try std.process.Child.run(.{
@@ -284,6 +293,8 @@ pub fn main() !void {
                         try bw.flush();
                         return error.bmakeInstallFail;
                     }
+
+                    p_pkg.completeOne();
 
                     debugLog("zps install: cleaning up using \"bmake clean\"", .{});
 
@@ -302,6 +313,8 @@ pub fn main() !void {
                         return error.bmakeCleanFail;
                     }
 
+                    p_pkg.completeOne();
+
                     debugLog("zps install: cleaning up dependencies using \"bmake clean-depends\"", .{});
 
                     const bmake_cleandep_res = try std.process.Child.run(.{
@@ -318,6 +331,9 @@ pub fn main() !void {
                         try bw.flush();
                         return error.bmakeCleanDependsFail;
                     }
+
+                    p_pkg.completeOne();
+                    p_pkg.end();
                 }
             },
             .u, .uninstall => {
