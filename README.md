@@ -15,4 +15,7 @@ contains one of the search terms.
 
 ## TODO
 
-Switch over to a database/datastore system instead of scanning the pkgsrc dir every time.
+* Implement a better way to store repository info. 
+* Read/Store package versions.
+* Shell completions.
+* Add option flags.

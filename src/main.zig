@@ -81,7 +81,7 @@ pub fn main() !void {
 
         var has_pkg_json: bool = true;
 
-        _ = std.fs.cwd().access("packages.json", .{}) catch |err| switch (err) {
+        _ = pkgsrc.access("packages.json", .{}) catch |err| switch (err) {
             error.FileNotFound => {
                 var pkgsrc_iter = pkgsrc.iterate();
                 while (try pkgsrc_iter.nextLinux()) |cat_entry| {
@@ -113,7 +113,7 @@ pub fn main() !void {
                     }
                 }
 
-                const write_file = try std.fs.cwd().createFile("packages.json", std.fs.File.CreateFlags{
+                const write_file = try pkgsrc.createFile("packages.json", std.fs.File.CreateFlags{
                     .read = true,
                 });
                 defer write_file.close();
@@ -133,7 +133,7 @@ pub fn main() !void {
         };
 
         if (has_pkg_json) {
-            const pkgs_json = try std.fs.cwd().openFile("packages.json", .{});
+            const pkgs_json = try pkgsrc.openFile("packages.json", .{});
             defer pkgs_json.close();
 
             const stat = try pkgs_json.stat();
