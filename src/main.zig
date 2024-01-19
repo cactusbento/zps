@@ -5,9 +5,9 @@ const usage =
     \\usage: pkgsrc <command> ...
     \\
     \\commands:
-    \\    search [terms...]        Search package names and descriptions.
-    \\    install [packages...]    Install one or more packages
-    \\    uninstall [packages...]  Uninstall one or more packages
+    \\    s/search [terms...]        Search package names and descriptions.
+    \\    i/install [packages...]    Install one or more packages
+    \\    u/uninstall [packages...]  Uninstall one or more packages
 ;
 
 const pkgsrcloc =
