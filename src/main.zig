@@ -7,7 +7,8 @@ const usage =
     \\commands:
     \\    s/search [terms...]        Search package names and descriptions.
     \\    i/install [packages...]    Install one or more packages
-    \\    u/uninstall [packages...]  Uninstall one or more packages
+    \\    r/remove [packages...]     Remove one or more packages
+    \\    u/update                   Updates the package repo (git)
 ;
 
 const pkgsrcloc =
@@ -344,7 +345,7 @@ pub fn main() !void {
                     p_pkg.end();
                 }
             },
-            .u, .uninstall => {
+            .r, .remove => {
                 const pkgs_to_uninstall = argv[2..];
 
                 var progress = std.Progress{};
@@ -367,6 +368,22 @@ pub fn main() !void {
                     }
                     p_uninstall.completeOne();
                     p_uninstall.end();
+                }
+            },
+            .u, .update => {
+                const git_pull_res = try std.process.Child.run(.{
+                    .allocator = allocator,
+                    .argv = &.{ "git", "pull" },
+                    .cwd_dir = pkgsrc,
+                });
+                defer {
+                    allocator.free(git_pull_res.stdout);
+                    allocator.free(git_pull_res.stderr);
+                }
+                if (git_pull_res.term != .Exited) {
+                    try stdout.print("Failed to update repository: \n{s}\n", .{git_pull_res.stdout});
+                    try bw.flush();
+                    return error.repoUpdateFail;
                 }
             },
         }
@@ -392,8 +409,10 @@ const Command = enum {
     search,
     i,
     install,
+    r,
+    remove,
     u,
-    uninstall,
+    update,
 };
 
 const Package = struct {
